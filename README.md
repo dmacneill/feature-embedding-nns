@@ -10,7 +10,7 @@ The models can be trained with a few lines of code:
 ```
 tracker = nntd.ProgressTracker(score_lookback, val_dataset, val_metric)
 pipeline = nntd.FeatureEmbeddingPipeline(**hyperparameter_dict, training_device = training_device)
-pipeline.train(train_dataset, tracker);
+pipeline.train(train_dataset, tracker)
 ```
 However, setting up the hyperparameter dict and datasets is a bit complicated. See `examples/nntd_example.ipynb` or `examples/hyperparameters` for examples.
 ### Example Results
