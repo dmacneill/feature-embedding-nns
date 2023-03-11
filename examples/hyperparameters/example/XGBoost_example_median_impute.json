@@ -1,0 +1,1 @@
+{"params":{"objective":"reg:squarederror","learning_rate":0.013106276,"max_depth":10,"lambda":51.0751584174,"gamma":0.0213019967,"subsample":0.6703279876,"colsample_bytree":0.8491177716,"min_child_weight":3.6484759958,"tree_method":"gpu_hist","seed":2319,"eval_metric":"logloss"},"num_boost_round":2000}
