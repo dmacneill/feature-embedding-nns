@@ -410,39 +410,57 @@ class FlatCategoricalEmbedding(nn.Module):
     Unused/obsolete module. Same logical output as CategoricalEmbedding but only works to create flat embeddings.
     """
     @classmethod
-    def make(cls, cardinalities, d_cat):
+    def make(cls, cardinalities: List[int], d_cat: int) -> nn.Module:
         embedding_dims = [min(d_cat, card) for card in cardinalities]
         return cls(cardinalities, embedding_dims)
 
-    def __init__(self, cardinalities, embedding_dims):
+    def __init__(self, cardinalities: List[int], embedding_dims: List[int]) -> None:
         super().__init__()
-        class_offset_idxs, base_idxs = self._get_idx_tensors(cardinalities, embedding_dims)
-        self.register_buffer('class_offset_idxs', class_offset_idxs)
+        base_idxs = self._get_base_idxs(cardinalities, embedding_dims)
         self.register_buffer('base_idxs', base_idxs)
+        class_offset_idxs = self._get_offset_idxs(embedding_dims)
+        self.register_buffer('class_offset_idxs', class_offset_idxs)
         embedding_parameter_count = sum(c*d for c, d in zip(cardinalities, embedding_dims))
         self.embeddings = nn.Parameter(torch.Tensor(1, embedding_parameter_count))
         self.embedding_dims = embedding_dims
         self.reset_parameters()
 
-    def reset_parameters(self):
+    def reset_parameters(self) -> None:
         n = sum(self.embedding_dims)/len(self.embedding_dims)
         init_parameter_uniform(self.embeddings, n)
 
     @staticmethod
-    def _get_idx_tensors(cardinalities, embedding_dims):
-        template_row_idxs = np.concatenate([[i]*d for i, d in enumerate(embedding_dims)])
-        template_rows = np.array([[d] for d in embedding_dims])
-        class_offset_idxs = (template_rows*np.eye(len(embedding_dims)))[template_row_idxs]
-        class_offset_idxs = torch.tensor(class_offset_idxs, dtype=torch.float).T
+    def _get_base_idxs(cardinalities: List[int], embedding_dims: List[int]) -> torch.Tensor:
+        """
+        Args:
+            cardinalities: list of number of classes for each categorical feature
+            embedding_dims: list of embedding sizes for each feature
+        Returns:
+            (1, sum(embedding_dims)) tensor that looks like [0, ..., d_0-1, n_0*d_0, n_0*d_0+1, ...], where d_i is the
+            embedding dimension of categorical feature i, and n_i is the number of classes.
+        """
         base_idxs = []
         start = 0
         for c, d in zip(cardinalities, embedding_dims):
             base_idxs.append(torch.arange(start, start+d, dtype=torch.float))
             start += c*d
         base_idxs = torch.cat(base_idxs)[None]
-        return class_offset_idxs, base_idxs
+        return base_idxs
+    @staticmethod
+    def _get_offset_idxs(embedding_dims: List[int]) -> torch.Tensor:
+        """
+        Args:
+            embedding_dims: list of embedding sizes for each feature
+        Returns:
+            (len(embedding_dims), sum(embedding_dims)) torch.Tensor that looks like diag(embedding_dims) with column i
+            repeated d_i times.
+        """
+        row_idxs = np.concatenate([[i]*d for i, d in enumerate(embedding_dims)])
+        class_offset_idxs = np.diag([d for d in embedding_dims])[row_idxs]
+        class_offset_idxs = torch.tensor(class_offset_idxs, dtype=torch.float).T
+        return class_offset_idxs
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = torch.round(self.base_idxs + x@self.class_offset_idxs).type(torch.long)
         return torch.take(self.embeddings, x)
 
