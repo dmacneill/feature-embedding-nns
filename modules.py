@@ -615,20 +615,17 @@ class FeatureEmbeddingModel(nn.Module):
         self.cat_tokenizer = cat_tokenizer
         self.dropout_input = nn.Dropout(dropout_input)
         self.backbone = backbone
-        
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+
+    def _split_features(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
-        x: (n_batch, n_num_features+n_cat_features); the first n_num_features columns are assumed to be the numeric
-        features. The categorical features are assumed to be integer encoded from 0 to n_classes-1
-        mask: (n_batch, n_num_features+n_cat_features)
-        returns: (n_batch, d_out)
+        Split feature tensor into numeric and categorical parts
         """
         x_num, x_cat = x[:, :self.n_num_features], x[:, self.n_num_features:]
         if mask is not None:
             num_mask, cat_mask = mask[:, :self.n_num_features], mask[:, self.n_num_features:]
         else:
             num_mask, cat_mask = None, None
-        return self._forward(x_num, x_cat, num_mask, cat_mask)
+        return x_num, x_cat, num_mask, cat_mask
 
     def _forward(
             self,
@@ -643,3 +640,13 @@ class FeatureEmbeddingModel(nn.Module):
             x = torch.cat((x, x_cat), dim=1)
         x = self.dropout_input(x)
         return self.backbone(x)
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        x: (n_batch, n_num_features+n_cat_features); the first n_num_features columns are assumed to be the numeric
+        features. The categorical features are assumed to be integer encoded from 0 to n_classes-1
+        mask: (n_batch, n_num_features+n_cat_features)
+        returns: (n_batch, d_out)
+        """
+        x_num, x_cat, num_mask, cat_mask = self._split_features(x, mask)
+        return self._forward(x_num, x_cat, num_mask, cat_mask)
