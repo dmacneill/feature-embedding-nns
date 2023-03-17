@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
-from .modules import FeatureEmbeddingModel
+from .modules import FeatureEmbeddingModel, AugmentedFeatureEmbeddingModel
 from .dataset import TabularDataset
 from typing import Iterator, Dict, Optional, Callable, List, Union, Tuple
 
@@ -193,6 +193,7 @@ class FeatureEmbeddingPipeline(Pipeline):
             training_device: torch.device,
             scheduler_name: Optional[str] = None,
             scheduler_params: Optional[Dict] = None,
+            augmentation_params: Optional[Dict] = None,
     ) -> None:
         """
         The task_type argument is used to automatically construct the relevant loss_fn and activation which are passed
@@ -218,16 +219,15 @@ class FeatureEmbeddingPipeline(Pipeline):
             scheduler_params,
             )
         self.model_params = model_params
+        self.augmentation_params = augmentation_params
     
     def _init_training(self, dataset: TabularDataset) -> None:
         """
         Construct optimizer, scheduler, and model. See modules.FeatureEmbeddingModel for keys of model_params.
         The (training) dataset is passed here since it is required to calculate the bin edges of binning encodings.
         """
-        self.model = FeatureEmbeddingModel.make(
-            dataset,
-            **self.model_params,
-            d_out=1
-            )
+        self.model = FeatureEmbeddingModel.make(dataset, **self.model_params, d_out=1)
+        if self.augmentation_params is not None:
+            self.model = AugmentedFeatureEmbeddingModel(self.model, **self.augmentation_params)
         self.model.to(self.training_device)
         self._init_optimizer()
