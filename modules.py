@@ -650,3 +650,5 @@ class FeatureEmbeddingModel(nn.Module):
         """
         x_num, x_cat, num_mask, cat_mask = self._split_features(x, mask)
         return self._forward(x_num, x_cat, num_mask, cat_mask)
+
+
