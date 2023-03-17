@@ -78,16 +78,18 @@ class NaNAugmentation(nn.Module):
         self.n_num_features = n_num_features
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        device = self.p_nan.device
-        mask = torch.rand((len(x), self.n_num_features), device=device) < self.p_nan
-        mask = torch.cat(
-            (
-                mask,
-                torch.zeros((len(x), x.shape[-1]-self.n_num_features), dtype=torch.bool, device=device)
-            ),
-            dim=1
-        )#pad the mask to the size of x to allow for categorical features
-        return torch.where(mask, np.nan, x)
+        if self.training:
+            device = self.p_nan.device
+            mask = torch.rand((len(x), self.n_num_features), device=device) < self.p_nan
+            mask = torch.cat(
+                (
+                    mask,
+                    torch.zeros((len(x), x.shape[-1]-self.n_num_features), dtype=torch.bool, device=device)
+                ),
+                dim=1
+            )#pad the mask to the size of x to allow for categorical features
+            x = torch.where(mask, np.nan, x)
+        return x
 
 class GaussianNoise(nn.Module):
     """
@@ -107,10 +109,12 @@ class GaussianNoise(nn.Module):
         self.n_num_features = n_num_features
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        device = self.sigma.device
-        noise = self.sigma*torch.normal(0, 1, x.shape, device=device)
-        noise[:, self.n_num_features:] = 0
-        return x+noise
+        if self.training:
+            device = self.sigma.device
+            noise = self.sigma*torch.normal(0, 1, x.shape, device=device)
+            noise[:, self.n_num_features:] = 0
+            x = x+noise
+        return x
 
 class AugmentedTabularDataset(TabularDataset):
     """
