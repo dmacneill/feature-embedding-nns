@@ -193,7 +193,6 @@ class FeatureEmbeddingPipeline(Pipeline):
             training_device: torch.device,
             scheduler_name: Optional[str] = None,
             scheduler_params: Optional[Dict] = None,
-            p_mask: Optional[float] = None,
     ) -> None:
         """
         The task_type argument is used to automatically construct the relevant loss_fn and activation which are passed
@@ -219,7 +218,6 @@ class FeatureEmbeddingPipeline(Pipeline):
             scheduler_params,
             )
         self.model_params = model_params
-        self.p_mask = p_mask
     
     def _init_training(self, dataset: TabularDataset) -> None:
         """
@@ -233,20 +231,3 @@ class FeatureEmbeddingPipeline(Pipeline):
             )
         self.model.to(self.training_device)
         self._init_optimizer()
-    
-    def _loss_from_batch(
-            self,
-            batch: Union[List[torch.Tensor], Tuple[torch.Tensor]]
-    ) -> torch.Tensor:
-        x_batch = batch[0].to(self.training_device)
-        y_batch = batch[1].to(self.training_device)
-        #masking logic below: where mask==True the feature embedding is replaced with a mask embedding
-        if self.p_mask is not None:
-            mask = torch.rand(
-                x_batch.shape,
-                device=self.training_device
-                ) < self.p_mask
-        else:
-            mask = None
-        yhat = self.model(x_batch, mask)
-        return self.loss_fn(yhat.squeeze(), y_batch)
