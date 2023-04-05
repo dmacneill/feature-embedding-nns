@@ -1,5 +1,5 @@
 ### Feature Embedding Neural Networks for Tabular Data
-PyTorch implementation of neural network architectures from ["On Embeddings for Numerical Features in Tabular Deep Learning"](https://arxiv.org/abs/2203.05556). The backbone modules are imported from the [rtdl](https://github.com/Yura52/rtdl) package. The feature embedding modules are re-implemented here. Compared to the paper there are several major differences:
+PyTorch implementation of neural network architectures from ["On Embeddings for Numerical Features in Tabular Deep Learning"](https://arxiv.org/abs/2203.05556). The backbone modules are imported from the [rtdl](https://github.com/Yura52/rtdl) package. The feature embedding modules are re-implemented here. Compared to the paper there are several main differences:
 1. Native support for NaNs in numeric features: they are mapped by the embedding layers to a feature-dependent vector
 2. Embeddings for categorical variables as in ["Entity Embeddings of Categorical Variables"](https://arxiv.org/abs/1604.06737)
 3. Masking: ability to replace feature embeddings by a mask vector
