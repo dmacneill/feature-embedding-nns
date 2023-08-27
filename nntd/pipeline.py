@@ -179,8 +179,6 @@ class FeatureEmbeddingPipeline(Pipeline):
     Attributes:
         See Pipeline attributes except for:
         model_params: Dict of model keyword arguments used to make the model (see _init_training)
-        p_mask: optional probability to replace embedding for a feature with an uninformative "mask embedding". Set to
-        None to not use masking.
     """
     def __init__(
             self,
