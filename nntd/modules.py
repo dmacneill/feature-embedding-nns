@@ -4,7 +4,7 @@ import torch.nn as nn
 import rtdl
 from rtdl import MLP, ResNet
 from .dataset import TabularDataset
-from typing import List, Union, Dict, Optional
+from typing import List, Union, Dict, Optional, Tuple
 
 def init_parameter_uniform(parameter: nn.Parameter, n: int) -> None:
     nn.init.uniform_(parameter, -1/np.sqrt(n), 1/np.sqrt(n))
@@ -615,22 +615,23 @@ class FeatureEmbeddingModel(nn.Module):
         self.cat_tokenizer = cat_tokenizer
         self.dropout_input = nn.Dropout(dropout_input)
         self.backbone = backbone
-        
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+
+    def split_features(
+            self,
+            x: torch.Tensor,
+            mask: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        x: (n_batch, n_num_features+n_cat_features); the first n_num_features columns are assumed to be the numeric
-        features. The categorical features are assumed to be integer encoded from 0 to n_classes-1
-        mask: (n_batch, n_num_features+n_cat_features)
-        returns: (n_batch, d_out)
+        Split feature tensor into numeric and categorical parts
         """
         x_num, x_cat = x[:, :self.n_num_features], x[:, self.n_num_features:]
         if mask is not None:
             num_mask, cat_mask = mask[:, :self.n_num_features], mask[:, self.n_num_features:]
         else:
             num_mask, cat_mask = None, None
-        return self._forward(x_num, x_cat, num_mask, cat_mask)
+        return x_num, x_cat, num_mask, cat_mask
 
-    def _forward(
+    def forward_from_split_features(
             self,
             x_num: torch.Tensor,
             x_cat: torch.Tensor,
@@ -643,3 +644,98 @@ class FeatureEmbeddingModel(nn.Module):
             x = torch.cat((x, x_cat), dim=1)
         x = self.dropout_input(x)
         return self.backbone(x)
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        x: (n_batch, n_num_features+n_cat_features); the first n_num_features columns are assumed to be the numeric
+        features. The categorical features are assumed to be integer encoded from 0 to n_classes-1
+        mask: (n_batch, n_num_features+n_cat_features)
+        returns: (n_batch, d_out)
+        """
+        x_num, x_cat, num_mask, cat_mask = self.split_features(x, mask)
+        return self.forward_from_split_features(x_num, x_cat, num_mask, cat_mask)
+
+class NaNAugmentation(nn.Module):
+    """
+    Module that adds NaNs to a batch of features
+    Attributes:
+        p_nan: probability of replacing numeric feature with NaN, or list of values for every numeric feature
+        n_num_features: number of numeric features in the dataset
+    """
+    def __init__(self, p_nan: Union[List[float], float], n_num_features: int) -> None:
+        if isinstance(p_nan, float):
+            p_nan = [p_nan]*n_num_features
+        assert(
+            len(p_nan) == n_num_features
+        ), 'len(p_nan) must equal the number of features if a list is passed'
+        super().__init__()
+        p_nan = torch.tensor([p_nan])
+        self.register_buffer('p_nan', p_nan)
+        self.n_num_features = n_num_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training:
+            device = self.p_nan.device
+            mask = torch.rand((len(x), self.n_num_features), device=device) < self.p_nan
+            x = torch.where(mask, np.nan, x)
+        return x
+
+class GaussianNoise(nn.Module):
+    """
+    Module that adds Gaussian noise to numeric data
+        sigma: noise standard deviation, or list of values for every numeric feature
+        n_num_features: number of numeric features in the dataset
+    """
+    def __init__(self, sigma: Union[List[float], float], n_num_features: int) -> None:
+        if isinstance(sigma, float):
+            sigma = [sigma]*n_num_features
+        assert(
+            len(sigma) == n_num_features
+        ), 'len(sigma) must equal the number of features if a list is passed'
+        super().__init__()
+        sigma = torch.tensor([sigma])
+        self.register_buffer('sigma', sigma)
+        self.n_num_features = n_num_features
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.training:
+            device = self.sigma.device
+            noise = self.sigma*torch.normal(0, 1, (len(x), self.n_num_features), device=device)
+            x = x+noise
+        return x
+
+class AugmentedFeatureEmbeddingModel(nn.Module):
+    """
+    Module that wraps FeatureEmbeddingModel and applies data augmentation to the input.
+    Attributes:
+        model: FeatureEmbeddingModel
+        nan_augmentation: module that randomly adds NaNs to numeric data
+        gaussian_noise: module that adds gaussian noise to numeric data
+    """
+    def __init__(
+            self,
+            model: FeatureEmbeddingModel,
+            p_nan: Optional[Union[List[float], float]] = None,
+            sigma: Optional[Union[List[float], float]] = None,
+    ):
+        """
+        Args:
+            model: FeatureEmbeddingModel
+            p_nan: probability of replacing numeric feature with NaN, or list of values for every numeric feature
+            sigma: noise standard deviation, or list of values for every numeric feature
+        """
+        super().__init__()
+        self.nan_augmentation = None if p_nan is None else NaNAugmentation(p_nan, model.n_num_features)
+        self.gaussian_noise = None if sigma is None else GaussianNoise(sigma, model.n_num_features)
+        self.model = model
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        See FeatureEmbeddingModel.forward
+        """
+        x_num, x_cat, num_mask, cat_mask = self.model.split_features(x, mask)
+        if self.nan_augmentation is not None:
+            x_num = self.nan_augmentation(x_num)
+        if self.gaussian_noise is not None:
+            x_num = self.gaussian_noise(x_num)
+        return self.model.forward_from_split_features(x_num, x_cat, num_mask, cat_mask)

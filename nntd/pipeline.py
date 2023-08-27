@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
-from .modules import FeatureEmbeddingModel
+from .modules import FeatureEmbeddingModel, AugmentedFeatureEmbeddingModel
 from .dataset import TabularDataset
 from typing import Iterator, Dict, Optional, Callable, List, Union, Tuple
 
@@ -179,8 +179,6 @@ class FeatureEmbeddingPipeline(Pipeline):
     Attributes:
         See Pipeline attributes except for:
         model_params: Dict of model keyword arguments used to make the model (see _init_training)
-        p_mask: optional probability to replace embedding for a feature with an uninformative "mask embedding". Set to
-        None to not use masking.
     """
     def __init__(
             self,
@@ -193,7 +191,7 @@ class FeatureEmbeddingPipeline(Pipeline):
             training_device: torch.device,
             scheduler_name: Optional[str] = None,
             scheduler_params: Optional[Dict] = None,
-            p_mask: Optional[float] = None,
+            augmentation_params: Optional[Dict] = None,
     ) -> None:
         """
         The task_type argument is used to automatically construct the relevant loss_fn and activation which are passed
@@ -219,34 +217,15 @@ class FeatureEmbeddingPipeline(Pipeline):
             scheduler_params,
             )
         self.model_params = model_params
-        self.p_mask = p_mask
+        self.augmentation_params = augmentation_params
     
     def _init_training(self, dataset: TabularDataset) -> None:
         """
         Construct optimizer, scheduler, and model. See modules.FeatureEmbeddingModel for keys of model_params.
         The (training) dataset is passed here since it is required to calculate the bin edges of binning encodings.
         """
-        self.model = FeatureEmbeddingModel.make(
-            dataset,
-            **self.model_params,
-            d_out=1
-            )
+        self.model = FeatureEmbeddingModel.make(dataset, **self.model_params, d_out=1)
+        if self.augmentation_params is not None:
+            self.model = AugmentedFeatureEmbeddingModel(self.model, **self.augmentation_params)
         self.model.to(self.training_device)
         self._init_optimizer()
-    
-    def _loss_from_batch(
-            self,
-            batch: Union[List[torch.Tensor], Tuple[torch.Tensor]]
-    ) -> torch.Tensor:
-        x_batch = batch[0].to(self.training_device)
-        y_batch = batch[1].to(self.training_device)
-        #masking logic below: where mask==True the feature embedding is replaced with a mask embedding
-        if self.p_mask is not None:
-            mask = torch.rand(
-                x_batch.shape,
-                device=self.training_device
-                ) < self.p_mask
-        else:
-            mask = None
-        yhat = self.model(x_batch, mask)
-        return self.loss_fn(yhat.squeeze(), y_batch)
