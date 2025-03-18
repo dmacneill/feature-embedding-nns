@@ -1,10 +1,10 @@
 ### Feature Embedding Neural Networks for Tabular Data
-PyTorch implementation of neural network architectures from ["On Embeddings for Numerical Features in Tabular Deep Learning"](https://arxiv.org/abs/2203.05556). The backbone modules are imported from the [rtdl](https://github.com/Yura52/rtdl) package. The feature embedding modules are re-implemented here. Compared to the paper there are several main differences:
+PyTorch implementation of neural network architectures from ["On Embeddings for Numerical Features in Tabular Deep Learning"](https://arxiv.org/abs/2203.05556). The feature embedding modules are re-implemented here. Compared to the paper there are several main differences:
 1. Native support for NaNs in numeric features: they are mapped by the embedding layers to a feature-dependent vector
 2. Embeddings for categorical variables as in ["Entity Embeddings of Categorical Variables"](https://arxiv.org/abs/1604.06737)
 3. Masking: ability to replace feature embeddings by a mask vector
 ### Requirements
-Python 3, PyTorch, NumPy, rtdl
+Python 3, PyTorch, NumPy
 ### Usage
 The models can be trained with a few lines of code:
 ```
@@ -15,7 +15,7 @@ pipeline.train(train_dataset, tracker)
 However, setting up the hyperparameter dict and datasets is a bit complicated. See `examples/nntd_example.ipynb` or `examples/hyperparameters` for examples.
 ### Example Results
 
-I wanted to test the performance of the built-in NaN handling. I trained and evaluted several models on the [California Housing](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_california_housing.html) dataset. For every experiment, hyperparameters were chosen using the validation set and final performance was evaluated on the test set. This is just a quick test. The results will likely change with further optimization and more realistic NaNs/datasets.
+I wanted to test the performance of the built-in NaN handling. I trained and evaluated several models on the [California Housing](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_california_housing.html) dataset. For every experiment, hyperparameters were chosen using the validation set and final performance was evaluated on the test set. This is just a quick test. The results will likely change with further optimization and more realistic NaNs/datasets.
 
 As a baseline I trained XGBoost and a "ResNet-QLR" neural network on the clean dataset ("No NaNs" below). For the other experiments, I randomly replaced 10% of feature values (excluding Latitude/Longitude) with NaN. The NaN-handling methods were:
 1. Median impute

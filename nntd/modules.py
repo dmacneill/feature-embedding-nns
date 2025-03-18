@@ -1,13 +1,14 @@
 import numpy as np
 import torch
-import torch.nn as nn
-import rtdl
-from rtdl import MLP, ResNet
+from torch import nn
+from nntd.backbone_models import ResNet
 from .dataset import TabularDataset
 from typing import List, Union, Dict, Optional, Tuple
 
+
 def init_parameter_uniform(parameter: nn.Parameter, n: int) -> None:
     nn.init.uniform_(parameter, -1/np.sqrt(n), 1/np.sqrt(n))
+
 
 class NLinear(nn.Module):
     """
@@ -37,6 +38,7 @@ class NLinear(nn.Module):
         x = (x.unsqueeze(-2)@self.weight[None]).squeeze(-2)
         x = x + self.bias[None]
         return x
+
 
 class PiecewiseLinearEncoder(nn.Module):
     """
@@ -116,6 +118,7 @@ class PiecewiseLinearEncoder(nn.Module):
         x = torch.nan_to_num(self._slopes*x)
         return torch.cat((nan_mask[..., None], x), dim=-1)
 
+
 class PeriodicEncoder(nn.Module):
     """
     Encodes numeric feature by creating a list of fourier features (cos(w_0*x), cos(w_1*x), ..., sin(w_0*x), ...) as
@@ -131,7 +134,7 @@ class PeriodicEncoder(nn.Module):
     def make(cls, dataset: TabularDataset, d_encoding: int, sigma: float) -> nn.Module:
         """
         Alternate constructor called by FeatureEmbedding model.
-        dataset: not used, included for compatability
+        dataset: not used, included for compatibility
         """
         return cls(dataset.n_num_features, d_encoding, sigma)
     
@@ -161,6 +164,7 @@ class PeriodicEncoder(nn.Module):
         x = torch.nan_to_num(2*np.pi*self.coefficients[None]*x[..., None])
         return torch.cat([nan_mask[..., None], torch.cos(x), torch.sin(x)], -1)
 
+
 class PLU(nn.Module):
     """
     Modified piecewise linear unit (saturating ReLU)
@@ -178,6 +182,7 @@ class PLU(nn.Module):
         x_minus = self.alpha*x
         x_plus = self.alpha*(x-self.c)+self.c
         return torch.max(x_minus, torch.min(x_plus, x))
+
 
 class PLUEncoder(nn.Module):
     """
@@ -203,7 +208,7 @@ class PLUEncoder(nn.Module):
     ) -> nn.Module:
         """
         Alternate constructor called by FeatureEmbedding model.
-        dataset: not used, included for compatability
+        dataset: not used, included for compatibility
         """
         return cls(dataset.n_num_features, d_encoding, sigma, c, alpha)
 
@@ -230,6 +235,7 @@ class PLUEncoder(nn.Module):
         x = self.weight[None] * x[..., None] + self.bias[None]
         return self.activation(x)
 
+
 class IdentityEncoder(nn.Module):
     """
     Placeholder encoder that returns input with new dimension of size 1 added. Used to make model without an encoder.
@@ -238,7 +244,7 @@ class IdentityEncoder(nn.Module):
     def make(cls, dataset: TabularDataset) -> nn.Module:
         """
         Alternate constructor called by FeatureEmbedding model.
-        dataset: not used, included for compatability
+        dataset: not used, included for compatibility
         """
         return cls()
 
@@ -252,6 +258,7 @@ class IdentityEncoder(nn.Module):
         returns: (n_batch, n_features, 1)
         """
         return x.unsqueeze(-1)
+
 
 class MaskEmbedding(nn.Module):
     """
@@ -279,6 +286,7 @@ class MaskEmbedding(nn.Module):
         if mask is None:
             return x
         return torch.where(mask[..., None], self.weight[None], x)
+
 
 class NumericalEmbedding(nn.Module):
     """
@@ -327,6 +335,7 @@ class NumericalEmbedding(nn.Module):
         x = self.mask_embedding(mask, x)
         x = x.reshape(len(x), -1) if self.flat else x
         return x
+
 
 class CategoricalEmbedding(nn.Module):
     """
@@ -405,131 +414,6 @@ class CategoricalEmbedding(nn.Module):
             x = torch.take_along_dim(x, self._take_idxs[None], dim=1)
         return x
 
-class FlatCategoricalEmbedding(nn.Module):
-    """
-    Unused/obsolete module. Same logical output as CategoricalEmbedding but only works to create flat embeddings.
-    """
-    @classmethod
-    def make(cls, cardinalities: List[int], d_cat: int) -> nn.Module:
-        embedding_dims = [min(d_cat, card) for card in cardinalities]
-        return cls(cardinalities, embedding_dims)
-
-    def __init__(self, cardinalities: List[int], embedding_dims: List[int]) -> None:
-        super().__init__()
-        base_idxs = self._get_base_idxs(cardinalities, embedding_dims)
-        self.register_buffer('base_idxs', base_idxs)
-        class_offset_idxs = self._get_offset_idxs(embedding_dims)
-        self.register_buffer('class_offset_idxs', class_offset_idxs)
-        embedding_parameter_count = sum(c*d for c, d in zip(cardinalities, embedding_dims))
-        self.embeddings = nn.Parameter(torch.Tensor(1, embedding_parameter_count))
-        self.embedding_dims = embedding_dims
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        n = sum(self.embedding_dims)/len(self.embedding_dims)
-        init_parameter_uniform(self.embeddings, n)
-
-    @staticmethod
-    def _get_base_idxs(cardinalities: List[int], embedding_dims: List[int]) -> torch.Tensor:
-        """
-        Args:
-            cardinalities: list of number of classes for each categorical feature
-            embedding_dims: list of embedding sizes for each feature
-        Returns:
-            (1, sum(embedding_dims)) tensor that looks like [0, ..., d_0-1, n_0*d_0, n_0*d_0+1, ...], where d_i is the
-            embedding dimension of categorical feature i, and n_i is the number of classes.
-        """
-        base_idxs = []
-        start = 0
-        for c, d in zip(cardinalities, embedding_dims):
-            base_idxs.append(torch.arange(start, start+d, dtype=torch.float))
-            start += c*d
-        base_idxs = torch.cat(base_idxs)[None]
-        return base_idxs
-    @staticmethod
-    def _get_offset_idxs(embedding_dims: List[int]) -> torch.Tensor:
-        """
-        Args:
-            embedding_dims: list of embedding sizes for each feature
-        Returns:
-            (len(embedding_dims), sum(embedding_dims)) torch.Tensor that looks like diag(embedding_dims) with column i
-            repeated d_i times.
-        """
-        row_idxs = np.concatenate([[i]*d for i, d in enumerate(embedding_dims)])
-        class_offset_idxs = np.diag([d for d in embedding_dims])[row_idxs]
-        class_offset_idxs = torch.tensor(class_offset_idxs, dtype=torch.float).T
-        return class_offset_idxs
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = torch.round(self.base_idxs + x@self.class_offset_idxs).type(torch.long)
-        return torch.take(self.embeddings, x)
-
-class Transformer(rtdl.Transformer):
-    """
-    Wrapper of rtdl.Transformer implementing forward and make_baseline methods in a convenient way. See
-    github.com/Yura52/rtdl or "Revisiting Deep Learning Models for Tabular Data".
-    """
-    @classmethod
-    def make_baseline(
-            cls,
-            d_in: int,
-            n_blocks: int,
-            attention_dropout: float,
-            ffn_d_hidden: int,
-            ffn_dropout: float,
-            d_out: int,
-    ) -> nn.Module:
-        """
-        Alternate constructor called by FeatureEmbedding model
-        d_in: embedding dimension (d_cat==d_num for non-flat model)
-        n_blocks: number of Transformer layers
-        attention_dropout: dropout applied to attention probabilities
-        ffn_d_hidden: size of feed-forward network hidden layer
-        ffn_dropout: dropout applied to feed-forward network hidden activations
-        d_out: dimension of head output
-        """
-        return cls(d_in, n_blocks, attention_dropout, ffn_d_hidden, ffn_dropout, d_out)
-
-    def __init__(
-            self,
-            d_in: int,
-            n_blocks: int,
-            attention_dropout: float,
-            ffn_d_hidden: int,
-            ffn_dropout: float,
-            d_out: int,
-    ) -> None:
-        super().__init__(
-            d_token=d_in,
-            n_blocks=n_blocks,
-            attention_n_heads=8,
-            attention_dropout=attention_dropout,
-            attention_initialization='kaiming',
-            attention_normalization='LayerNorm',
-            ffn_d_hidden=ffn_d_hidden,
-            ffn_dropout=ffn_dropout,
-            ffn_activation='ReGLU',
-            ffn_normalization='LayerNorm',
-            residual_dropout=0.0,
-            prenormalization=True,
-            first_prenormalization=False,
-            last_layer_query_idx=[-1],
-            n_tokens=None,
-            kv_compression_ratio=None,
-            kv_compression_sharing=None,
-            head_activation='ReLU',
-            head_normalization='LayerNorm',
-            d_out=d_out,
-        )
-        self.cls_token = rtdl.CLSToken(d_in, 'uniform')
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        x: (n_batch, n_features, d_in)
-        returns: (n_batch, d_out)
-        """
-        x = self.cls_token(x)
-        return super().forward(x)
 
 class FeatureEmbeddingModel(nn.Module):
     """
@@ -537,7 +421,7 @@ class FeatureEmbeddingModel(nn.Module):
     Has three main submodules: num_tokenizer, cat_tokenizer, and backbone. num_tokenizer/cat_tokenizer are modules
     applied to each feature independently converting (n_batch, n_num_features+n_cat_features) input data
     into a (n_batch, n_num_features+n_cat_features, d_embedding) or (n_batch, n_num_features*d_num+sum(d_cat_i))
-    embedding. The backbone modules are taken from rtdl: ResNet, MLP and Transformer are supported.
+    embedding.
     """
     @classmethod
     def make(
@@ -571,9 +455,6 @@ class FeatureEmbeddingModel(nn.Module):
         assert(
             not (dataset.cardinalities and d_cat is None)
         ), 'd_cat must be set if there are categorical features'
-        assert(
-            not (flat_embedding and backbone_name == 'Transformer')
-        ), 'flat_embedding must be False for the Transformer backbone'
         encoder = globals()[encoder_name].make(dataset=dataset, **encoder_params)
         num_tokenizer = NumericalEmbedding.make(
             encoder,
@@ -655,6 +536,7 @@ class FeatureEmbeddingModel(nn.Module):
         x_num, x_cat, num_mask, cat_mask = self.split_features(x, mask)
         return self.forward_from_split_features(x_num, x_cat, num_mask, cat_mask)
 
+
 class NaNAugmentation(nn.Module):
     """
     Module that adds NaNs to a batch of features
@@ -680,6 +562,7 @@ class NaNAugmentation(nn.Module):
             x = torch.where(mask, np.nan, x)
         return x
 
+
 class GaussianNoise(nn.Module):
     """
     Module that adds Gaussian noise to numeric data
@@ -703,6 +586,7 @@ class GaussianNoise(nn.Module):
             noise = self.sigma*torch.normal(0, 1, (len(x), self.n_num_features), device=device)
             x = x+noise
         return x
+
 
 class AugmentedFeatureEmbeddingModel(nn.Module):
     """

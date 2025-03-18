@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from typing import List, Optional, Tuple
 
+
 class TabularDataset(torch.utils.data.Dataset):
     """
     Dataset that can be passed to nntd.pipelines.Pipeline for training.
