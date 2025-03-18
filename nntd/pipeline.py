@@ -7,6 +7,7 @@ from .modules import FeatureEmbeddingModel, AugmentedFeatureEmbeddingModel
 from .dataset import TabularDataset
 from typing import Iterator, Dict, Optional, Callable, List, Union, Tuple
 
+
 class ProgressTracker:
     """
     Simple class to hold training results + to pass evaluation callback to the Pipeline class
@@ -59,6 +60,7 @@ class ProgressTracker:
         plt.plot(self.losses, 'o-')
         plt.xlabel('Validation Loss')
         plt.ylabel('Epoch')
+
 
 class Pipeline:
     """
@@ -171,6 +173,7 @@ class Pipeline:
                     self.scheduler.step()
             if tracker is not None:
                 tracker.update(self)
+
 
 class FeatureEmbeddingPipeline(Pipeline):
     """
